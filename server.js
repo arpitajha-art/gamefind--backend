@@ -27,6 +27,34 @@ app.get('/courses', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+// Create or log in a user (simple - just by username, no password)
+app.post('/users/login', async (req, res) => {
+  try {
+    const { username } = req.body;
+    let result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+    if (result.rows.length === 0) {
+      result = await pool.query(
+        'INSERT INTO users (username) VALUES ($1) RETURNING *',
+        [username]
+      );
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Get a user's current stats
+app.get('/users/:id', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.id]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 // Get topics for a specific course
 app.get('/courses/:courseId/topics', async (req, res) => {
