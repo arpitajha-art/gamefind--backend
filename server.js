@@ -27,6 +27,58 @@ app.get('/courses', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+// Award XP and update streak in one step — call this any time a user does something worth rewarding
+app.post('/users/:id/activity', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount, reason } = req.body;
+
+    const userResult = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+    const user = userResult.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const today = new Date().toISOString().split('T')[0]; // e.g. "2026-09-29"
+    let newStreak = user.current_streak || 0;
+
+    if (!user.last_active_date) {
+      // first time ever being active
+      newStreak = 1;
+    } else {
+      const lastDate = new Date(user.last_active_date).toISOString().split('T')[0];
+
+      if (lastDate === today) {
+        // already active today — streak stays the same
+      } else {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+        if (lastDate === yesterdayStr) {
+          newStreak = newStreak + 1; // kept the streak going
+        } else {
+          newStreak = 1; // streak broken, restart at 1
+        }
+      }
+    }
+
+    // log this XP event (lets us calculate weekly totals later)
+    await pool.query(
+      'INSERT INTO xp_log (user_id, amount, reason) VALUES ($1, $2, $3)',
+      [id, amount, reason]
+    );
+
+    // update the user's running totals
+    const updated = await pool.query(
+      'UPDATE users SET xp_total = xp_total + $1, current_streak = $2, last_active_date = $3 WHERE id = $4 RETURNING *',
+      [amount, newStreak, today, id]
+    );
+
+    res.json(updated.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
 // Create or log in a user (simple - just by username, no password)
 app.post('/users/login', async (req, res) => {
   try {
